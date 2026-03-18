@@ -2,7 +2,7 @@
 
 **Interactive measure dependency explorer for Power BI models.** Visualize which measures depend on which other measures and columns — entirely in the browser, no installs required.
 
-→ **[Launch the tool](https://YOUR_USERNAME.github.io/pbi-measure-lineage/)**
+→ **[Launch the tool](https://mcheibani.github.io/pbi-measure-lineage/)**
 
 ---
 
@@ -13,11 +13,11 @@ Drop in your Power BI model's dependency data and instantly get:
 - **Focus View** — Select any measure from a searchable sidebar. See its upstream dependencies (what it depends on) and downstream dependents (what uses it) in a clean left-to-right PBI lineage-style layout. Measures and columns are grouped separately.
 - **Graph View** — Full force-directed network of all measure relationships. Click any node to highlight its complete dependency chain. Filter by measures/columns. Search, zoom, pan.
 
-Columns appear only as dependencies of measures — they don't clutter the sidebar or dominate the graph.
+Columns appear only as dependencies of measures, they don't clutter the sidebar or dominate the graph.
 
 ## Why this exists
 
-Power BI has no built-in way to see measure-level lineage. The workspace lineage view stops at the dataset/report level. When you have 300+ measures and need to understand what feeds what — especially during optimization, refactoring, or onboarding — you need something better. This tool fills that gap.
+Power BI has no built-in way to see measure-level lineage. The workspace lineage view stops at the dataset/report level. When you have 300+ measures and need to understand what feeds what, especially during optimization, refactoring, or onboarding. This tool fills that gap.
 
 ## Getting started
 
@@ -50,7 +50,7 @@ SELECTCOLUMNS(
 )
 ```
 
-**Step 2.** In the results grid: **Ctrl+A** → **Ctrl+C** to copy all rows.
+**Step 2.** Click on the Copy button then Copy Entire Table.
 
 **Step 3.** Open the tool → **Load Data** → paste into the text area → **Load Graph**.
 
@@ -146,20 +146,6 @@ This is a single HTML file. To share:
 3. No logins, no installs, no Power BI license needed to view.
 
 Or point them to the hosted GitHub Pages version and have them paste the data directly.
-
-## Deployment
-
-### GitHub Pages (recommended)
-
-This tool is designed to run as a static GitHub Pages site:
-
-1. Fork or clone this repo.
-2. Go to **Settings** → **Pages** → set source to **Deploy from a branch** → select `main` and `/ (root)`.
-3. Your tool will be live at `https://YOUR_USERNAME.github.io/pbi-measure-lineage/`.
-
-### Self-hosted
-
-Drop `index.html` on any static file server or open it directly from your filesystem.
 
 ## Roadmap
 
