@@ -1,0 +1,1675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Measure Lineage Explorer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-2: #1c2129;
+    --surface-3: #21262d;
+    --border: #30363d;
+    --border-light: #484f58;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --text-dim: #6e7681;
+    --accent: #58a6ff;
+    --accent-glow: rgba(88, 166, 255, 0.15);
+    --measure: #58a6ff;
+    --column: #3fb950;
+    --upstream: #d2a8ff;
+    --downstream: #f0883e;
+    --link: #30363d;
+    --font: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: 'JetBrains Mono', 'Cascadia Code', monospace;
+    --header-h: 52px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); overflow: hidden; height: 100vh; }
+
+  /* ═══ HEADER ═══ */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    display: flex; align-items: center; gap: 16px;
+    padding: 12px 20px; height: var(--header-h);
+    background: rgba(13, 17, 23, 0.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .header .logo {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 700; font-size: 15px; letter-spacing: -0.3px; white-space: nowrap;
+  }
+  .header .logo svg { flex-shrink: 0; }
+  .header .logo span.dim { color: var(--text-muted); font-weight: 400; }
+
+  .view-toggle {
+    display: flex; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; overflow: hidden;
+  }
+  .view-toggle button {
+    padding: 5px 14px; border: none; background: transparent;
+    color: var(--text-dim); font-family: var(--font); font-size: 12px; font-weight: 500;
+    cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 6px;
+  }
+  .view-toggle button:hover { color: var(--text); }
+  .view-toggle button.active { background: var(--accent-glow); color: var(--accent); }
+
+  .search-box { flex: 1; max-width: 360px; position: relative; }
+  .search-box input {
+    width: 100%; padding: 7px 12px 7px 34px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-family: var(--font); font-size: 13px; outline: none;
+  }
+  .search-box input:focus { border-color: var(--accent); }
+  .search-box input::placeholder { color: var(--text-dim); }
+  .search-box svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-dim); }
+
+  .stat-pills { display: flex; gap: 6px; align-items: center; }
+  .stat-pill {
+    padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 500;
+    background: var(--surface); border: 1px solid var(--border); color: var(--text-muted);
+  }
+  .stat-pill .num { color: var(--text); font-family: var(--mono); font-size: 12px; }
+
+  .header-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+  .btn {
+    padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text-muted); font-family: var(--font);
+    font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.15s;
+    display: flex; align-items: center; gap: 6px; white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--border-light); color: var(--text); background: var(--surface-2); }
+  .btn-accent { background: rgba(88,166,255,0.1); border-color: rgba(88,166,255,0.3); color: var(--accent); }
+  .btn-accent:hover { background: rgba(88,166,255,0.18); }
+
+  /* ═══ VIEWS ═══ */
+  .view { display: none; position: fixed; top: var(--header-h); left: 0; right: 0; bottom: 0; }
+  .view.active { display: flex; }
+
+  /* ═══ VIEW 1 — FULL GRAPH ═══ */
+  #view-graph { flex-direction: column; }
+  #graph-container { flex: 1; position: relative; }
+  #graph-container svg { width: 100%; height: 100%; }
+  .node-group { cursor: pointer; }
+  .node-group:hover .node-circle { filter: brightness(1.3); }
+  .node-circle { transition: r 0.2s, filter 0.2s; }
+  .node-label {
+    font-family: var(--font); font-size: 11px; font-weight: 500;
+    fill: var(--text-muted); pointer-events: none; text-anchor: middle; dominant-baseline: middle;
+  }
+  .link { stroke: var(--link); stroke-opacity: 0.5; fill: none; }
+
+  .detail-panel {
+    position: fixed; top: var(--header-h); right: 0; bottom: 0; width: 340px;
+    background: var(--surface); border-left: 1px solid var(--border); z-index: 90;
+    transform: translateX(100%); transition: transform 0.25s ease;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .detail-panel.open { transform: translateX(0); }
+  .detail-header {
+    padding: 16px 20px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  }
+  .detail-header h3 { font-size: 15px; font-weight: 600; word-break: break-word; }
+  .detail-header .table-tag { font-size: 11px; color: var(--text-muted); margin-top: 2px; font-family: var(--mono); }
+  .detail-close {
+    flex-shrink: 0; width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px; border: none; background: transparent;
+    color: var(--text-muted); cursor: pointer; font-size: 16px;
+  }
+  .detail-close:hover { background: var(--surface-2); color: var(--text); }
+  .detail-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+
+  .legend {
+    position: fixed; bottom: 16px; left: 16px;
+    background: rgba(22,27,34,0.9); backdrop-filter: blur(8px);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; z-index: 80; font-size: 12px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .legend-item:last-child { margin-bottom: 0; }
+  .legend-swatch { width: 10px; height: 10px; border-radius: 50%; }
+
+  .zoom-controls {
+    position: fixed; bottom: 16px; right: 16px;
+    display: flex; flex-direction: column; gap: 4px; z-index: 80;
+  }
+  .zoom-btn {
+    width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text-muted); cursor: pointer; font-size: 16px; transition: all 0.15s;
+  }
+  .zoom-btn:hover { background: var(--surface-2); color: var(--text); }
+
+  /* ═══ VIEW 2 — FOCUS ═══ */
+  #view-focus { flex-direction: row; }
+
+  .focus-sidebar {
+    width: 280px; min-width: 220px; max-width: 560px;
+    flex: 0 0 280px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .focus-sidebar-resizer {
+    width: 8px;
+    cursor: col-resize;
+    background: var(--surface-2);
+    border-right: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+    position: relative;
+    flex-shrink: 0;
+  }
+  .focus-sidebar-resizer::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 3px;
+    height: 40px;
+    border-radius: 999px;
+    background: var(--border-light);
+  }
+  .focus-sidebar-header { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .focus-sidebar-header .search-icon-wrap { position: relative; }
+  .focus-sidebar-header .search-icon-wrap svg {
+    position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-dim);
+  }
+  .focus-sidebar-search {
+    width: 100%; padding: 7px 12px 7px 34px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-family: var(--font); font-size: 13px; outline: none;
+  }
+  .focus-sidebar-search:focus { border-color: var(--accent); }
+  .focus-sidebar-search::placeholder { color: var(--text-dim); }
+  .focus-sidebar-count { font-size: 11px; color: var(--text-dim); padding: 8px 16px 4px; }
+  .focus-sidebar-legend {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 16px 8px;
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  .focus-sidebar-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+  .focus-sidebar-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1px solid transparent;
+  }
+  .focus-sidebar-legend-dot.up {
+    background: rgba(210,168,255,0.18);
+    border-color: rgba(210,168,255,0.35);
+  }
+  .focus-sidebar-legend-dot.down {
+    background: rgba(240,136,62,0.18);
+    border-color: rgba(240,136,62,0.35);
+  }
+  .focus-sidebar-list { flex: 1; overflow-y: auto; list-style: none; }
+  .focus-sidebar-list li {
+    padding: 8px 16px; font-size: 13px; cursor: pointer;
+    display: flex; align-items: center; gap: 10px;
+    border-left: 3px solid transparent; transition: all 0.1s;
+  }
+  .focus-sidebar-list li:hover { background: var(--surface-2); }
+  .focus-sidebar-list li.active { background: var(--accent-glow); border-left-color: var(--accent); }
+  .focus-sidebar-list .measure-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .focus-sidebar-list .measure-counts { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; }
+  .focus-sidebar-list .measure-count-dot {
+    width: 18px; height: 18px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; font-family: var(--mono);
+    border: 1px solid transparent;
+    line-height: 1;
+  }
+  .focus-sidebar-list .measure-count-dot.up {
+    color: var(--upstream);
+    background: rgba(210,168,255,0.12);
+    border-color: rgba(210,168,255,0.3);
+  }
+  .focus-sidebar-list .measure-count-dot.down {
+    color: var(--downstream);
+    background: rgba(240,136,62,0.12);
+    border-color: rgba(240,136,62,0.3);
+  }
+
+  .focus-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  .focus-empty {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--text-dim); gap: 12px;
+  }
+  .focus-empty svg { opacity: 0.3; }
+  .focus-empty .focus-empty-title { font-size: 16px; font-weight: 600; color: var(--text-muted); }
+  .focus-empty .focus-empty-sub { font-size: 13px; max-width: 260px; text-align: center; line-height: 1.5; }
+
+  /* ── LINEAGE AREA (PBI-style) ── */
+  .focus-lineage-area {
+    height: 40%; min-height: 200px;
+    border-bottom: 1px solid var(--border);
+    position: relative; display: none;
+    overflow: auto;
+    background:
+      radial-gradient(circle at 50% 50%, rgba(88,166,255,0.03) 0%, transparent 70%);
+  }
+  .focus-lineage-area.visible { display: block; }
+  .focus-lineage-area svg { display: block; }
+
+  .focus-lineage-toolbar {
+    display: none;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .focus-lineage-toolbar.visible { display: flex; }
+  .focus-lineage-toolbar .btn {
+    padding: 4px 8px;
+    min-width: 30px;
+    justify-content: center;
+  }
+  .focus-zoom-pct {
+    min-width: 46px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+  }
+
+  .focus-resizer {
+    height: 8px;
+    background: var(--surface-2);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    cursor: row-resize;
+    display: none;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .focus-resizer.visible { display: block; }
+  .focus-resizer::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 48px;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--border-light);
+  }
+
+  /* PBI-style lineage cards */
+  .lineage-card {
+    cursor: pointer;
+  }
+  .lineage-card-bg {
+    rx: 8; ry: 8;
+    stroke-width: 1.5;
+    transition: filter 0.15s;
+  }
+  .lineage-card:hover .lineage-card-bg { filter: brightness(1.15); }
+  .lineage-card-name {
+    font-family: var(--font); font-weight: 600; font-size: 12px;
+    fill: var(--text);
+  }
+  .lineage-card-table {
+    font-family: var(--mono); font-size: 10px;
+    fill: var(--text-dim);
+  }
+  .lineage-card-type-badge {
+    font-family: var(--font); font-weight: 600; font-size: 9px;
+    letter-spacing: 0.3px;
+  }
+  .lineage-connector {
+    fill: none; stroke-width: 1.5;
+  }
+  .lineage-arrow {
+    stroke: none;
+  }
+
+  /* Column label */
+  .lineage-col-label {
+    font-family: var(--font); font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    fill: var(--text-dim);
+    text-anchor: middle;
+  }
+
+  /* Detail columns (bottom) */
+  .focus-detail-area { flex: 1; overflow: hidden; display: none; }
+  .focus-detail-area.visible { display: flex; }
+  .focus-detail-cols { display: flex; flex: 1; min-height: 0; }
+  .focus-detail-col { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .focus-detail-col + .focus-detail-col { border-left: 1px solid var(--border); }
+  .focus-col-header {
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.4px; color: var(--text-dim); flex-shrink: 0;
+  }
+  .focus-col-header .col-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .focus-col-header .col-count { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-dim); font-weight: 400; }
+  .focus-col-body { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .focus-dep-item {
+    padding: 8px 16px; font-size: 13px;
+    display: flex; align-items: center; gap: 10px;
+    cursor: pointer; transition: background 0.1s;
+  }
+  .focus-dep-item:hover { background: var(--surface-2); }
+  .focus-dep-item .dep-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .focus-dep-item .dep-dot.measure { background: var(--measure); }
+  .focus-dep-item .dep-dot.column { background: var(--column); }
+  .focus-dep-item .dep-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .focus-dep-item .dep-table { font-size: 10px; color: var(--text-dim); font-family: var(--mono); flex-shrink: 0; }
+  .focus-dep-item .dep-badge {
+    font-size: 9px; padding: 1px 6px; border-radius: 3px;
+    font-weight: 600; letter-spacing: 0.3px; flex-shrink: 0;
+  }
+  .focus-dep-item .dep-badge.is-measure { background: rgba(88,166,255,0.12); color: var(--measure); }
+  .focus-dep-item .dep-badge.is-column { background: rgba(63,185,80,0.12); color: var(--column); }
+  .focus-col-empty { padding: 24px 16px; text-align: center; color: var(--text-dim); font-size: 12px; font-style: italic; }
+
+  /* ═══ SHARED ═══ */
+  .dep-section { margin-bottom: 20px; }
+  .dep-section-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); margin-bottom: 8px; }
+  .dep-list { list-style: none; }
+  .dep-list li {
+    padding: 5px 8px; border-radius: 4px; font-size: 13px; cursor: pointer;
+    display: flex; align-items: center; gap: 8px; transition: background 0.1s;
+  }
+  .dep-list li:hover { background: var(--surface-2); }
+  .dep-list .dep-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dep-list .dep-dot.measure { background: var(--measure); }
+  .dep-list .dep-dot.column { background: var(--column); }
+  .dep-list .dep-table-name { color: var(--text-dim); font-size: 11px; font-family: var(--mono); margin-left: auto; }
+  .empty-msg { color: var(--text-dim); font-size: 12px; font-style: italic; }
+
+  /* ═══ MODAL ═══ */
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal-backdrop.hidden { display: none; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; width: 560px; max-width: 90vw; max-height: 80vh;
+    display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .modal-header { padding: 20px 24px 0; }
+  .modal-header h2 { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+  .modal-header p { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+  .modal-body { padding: 16px 24px; flex: 1; overflow-y: auto; }
+  .modal-footer { padding: 12px 24px 20px; display: flex; gap: 8px; justify-content: flex-end; }
+  .tab-row { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+  .tab-btn {
+    padding: 8px 16px; background: none; border: none; color: var(--text-muted);
+    font-family: var(--font); font-size: 13px; font-weight: 500; cursor: pointer;
+    border-bottom: 2px solid transparent; transition: all 0.15s;
+  }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-btn:hover { color: var(--text); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  .query-block {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 12px 14px; font-family: var(--mono); font-size: 11.5px; line-height: 1.6;
+    color: var(--text-muted); position: relative; margin-bottom: 12px;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .query-block .copy-btn {
+    position: absolute; top: 8px; right: 8px;
+    padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text-dim); font-family: var(--font);
+    font-size: 10px; cursor: pointer; transition: all 0.15s;
+  }
+  .query-block .copy-btn:hover { color: var(--text); border-color: var(--border-light); }
+  .step-label { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+  .step-num { width: 20px; height: 20px; border-radius: 50%; background: var(--accent-glow); color: var(--accent); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .step-desc { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.5; }
+  .badge-rec { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; font-family: var(--font); letter-spacing: 0.3px; margin-left: 4px; vertical-align: middle; }
+  .badge-rec.recommended { background: rgba(63,185,80,0.12); color: var(--column); }
+  .drop-zone {
+    border: 2px dashed var(--border); border-radius: 8px; padding: 32px;
+    text-align: center; color: var(--text-muted); font-size: 13px; cursor: pointer; transition: all 0.2s;
+  }
+  .drop-zone:hover, .drop-zone.dragover { border-color: var(--accent); background: var(--accent-glow); }
+  .drop-zone input { display: none; }
+  textarea.csv-paste {
+    width: 100%; min-height: 160px; padding: 12px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-family: var(--mono); font-size: 12px; resize: vertical; outline: none;
+  }
+  textarea.csv-paste:focus { border-color: var(--accent); }
+  .format-hint { font-size: 11px; color: var(--text-dim); margin-top: 8px; line-height: 1.5; }
+  .format-hint code { background: var(--bg); padding: 1px 5px; border-radius: 3px; font-family: var(--mono); font-size: 11px; }
+
+  .tooltip {
+    position: fixed; padding: 6px 10px; background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 6px; font-size: 12px;
+    color: var(--text); pointer-events: none; z-index: 150; display: none; white-space: nowrap;
+  }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="logo">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect width="20" height="20" rx="4" fill="#58a6ff" fill-opacity="0.15"/><circle cx="5" cy="6" r="1.6" fill="#58a6ff"/><circle cx="15" cy="6" r="1.6" fill="#58a6ff"/><circle cx="10" cy="14" r="1.6" fill="#58a6ff"/><path d="M6.3 7.1L8.8 12.4M13.7 7.1L11.2 12.4" stroke="#58a6ff" stroke-width="1.3" stroke-linecap="round"/></svg>
+    Measure Lineage <span class="dim">Explorer</span>
+  </div>
+
+  <div class="view-toggle">
+    <button class="active" data-view="focus">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="18" rx="1"/></svg>
+      Focus
+    </button>
+    <button data-view="graph">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2"/><line x1="6.7" y1="7.5" x2="10.7" y2="16"/><line x1="17.3" y1="7.5" x2="13.3" y2="16"/></svg>
+      Graph
+    </button>
+  </div>
+
+  <div class="search-box" id="headerSearchBox" style="display:none;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" id="searchInput" placeholder="Search measures…" />
+  </div>
+
+  <div class="stat-pills" id="statPills"></div>
+
+  <div class="header-actions">
+    <button class="btn" id="btnResetView" title="Reset full view state">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h18"/><path d="M10 7l-5 5 5 5"/><path d="M14 7l5 5-5 5"/></svg>
+      Reset View
+    </button>
+    <button class="btn btn-accent" id="btnLoad">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Load Data
+    </button>
+  </div>
+</div>
+
+<!-- VIEW 1: FULL GRAPH -->
+<div class="view" id="view-graph">
+  <div id="graph-container"></div>
+</div>
+
+<div class="legend" id="legend" style="display:none;">
+  <div class="legend-item"><div class="legend-swatch" style="background:var(--measure)"></div> Measure</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:var(--column)"></div> Column</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:var(--upstream)"></div> Upstream</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:var(--downstream)"></div> Downstream</div>
+</div>
+
+<div class="zoom-controls" id="zoomControls" style="display:none;">
+  <button class="zoom-btn" id="zoomIn">+</button>
+  <button class="zoom-btn" id="zoomOut">−</button>
+  <button class="zoom-btn" id="zoomFit" title="Fit all">⊡</button>
+</div>
+
+<div class="detail-panel" id="detailPanel">
+  <div class="detail-header">
+    <div><h3 id="detailName"></h3><div class="table-tag" id="detailTable"></div></div>
+    <button class="detail-close" id="detailClose">✕</button>
+  </div>
+  <div class="detail-body">
+    <div class="dep-section"><div class="dep-section-title"><span style="color:var(--upstream)">●</span> Depends On (upstream)</div><ul class="dep-list" id="depListUpstream"></ul></div>
+    <div class="dep-section"><div class="dep-section-title"><span style="color:var(--downstream)">●</span> Used By (downstream)</div><ul class="dep-list" id="depListDownstream"></ul></div>
+  </div>
+</div>
+
+<!-- VIEW 2: FOCUS (default) -->
+<div class="view active" id="view-focus">
+  <div class="focus-sidebar">
+    <div class="focus-sidebar-header">
+      <div class="search-icon-wrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" class="focus-sidebar-search" id="focusSearch" placeholder="Filter measures…" />
+      </div>
+    </div>
+    <div class="focus-sidebar-count" id="focusSidebarCount"></div>
+    <div class="focus-sidebar-legend">
+      <span class="focus-sidebar-legend-item"><span class="focus-sidebar-legend-dot up"></span>Up</span>
+      <span class="focus-sidebar-legend-item"><span class="focus-sidebar-legend-dot down"></span>Down</span>
+    </div>
+    <ul class="focus-sidebar-list" id="focusMeasureList"></ul>
+  </div>
+  <div class="focus-sidebar-resizer" id="focusSidebarResizer" title="Drag to resize measure list"></div>
+  <div class="focus-main">
+    <div class="focus-empty" id="focusEmpty">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round">
+        <circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="18" r="2"/>
+        <line x1="6.7" y1="7.5" x2="10.7" y2="16"/><line x1="17.3" y1="7.5" x2="13.3" y2="16"/>
+      </svg>
+      <div class="focus-empty-title">Select a measure to view lineage</div>
+      <div class="focus-empty-sub">Choose a measure from the list on the left to see its dependency graph and upstream / downstream connections.</div>
+    </div>
+
+    <div class="focus-lineage-toolbar" id="focusLineageToolbar">
+      <button class="btn" id="focusZoomOut" title="Zoom out">-</button>
+      <div class="focus-zoom-pct" id="focusZoomPct">100%</div>
+      <button class="btn" id="focusZoomIn" title="Zoom in">+</button>
+      <button class="btn" id="focusZoomFit" title="Fit to panel">Fit</button>
+    </div>
+
+    <!-- PBI-style lineage view -->
+    <div class="focus-lineage-area" id="focusLineageArea"></div>
+
+    <div class="focus-resizer" id="focusResizer" title="Drag to resize focus sections"></div>
+
+    <!-- Detail columns -->
+    <div class="focus-detail-area" id="focusDetailArea">
+      <div class="focus-detail-cols">
+        <div class="focus-detail-col">
+          <div class="focus-col-header"><div class="col-dot" style="background:var(--upstream)"></div>Depends On (Upstream)<span class="col-count" id="focusUpCount">0</span></div>
+          <div class="focus-col-body" id="focusUpBody"></div>
+        </div>
+        <div class="focus-detail-col">
+          <div class="focus-col-header"><div class="col-dot" style="background:var(--downstream)"></div>Used By (Downstream)<span class="col-count" id="focusDownCount">0</span></div>
+          <div class="focus-col-body" id="focusDownBody"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-backdrop" id="modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Load Measure Lineage Data</h2>
+      <p>Load lineage via DAX Query View, CSV export, or VPAX archive.</p>
+    </div>
+    <div class="modal-body">
+      <div class="tab-row">
+        <button class="tab-btn active" data-tab="dax">DAX Query View <span class="badge-rec recommended">RECOMMENDED</span></button>
+        <button class="tab-btn" data-tab="paste">Paste CSV</button>
+        <button class="tab-btn" data-tab="file">Upload File</button>
+        <button class="tab-btn" data-tab="vpax">Upload VPAX</button>
+        <button class="tab-btn" data-tab="demo">Demo Data</button>
+      </div>
+
+      <div class="tab-content active" id="tab-dax">
+        <div class="step-label"><span class="step-num">1</span>Run this query in DAX Query View</div>
+        <div class="step-desc">Open your model in Power BI Desktop, use DAX Query View, and run this query to return measure dependencies only.</div>
+        <div class="query-block" id="daxQueryBlock"><button class="copy-btn" id="copyDaxBtn">Copy</button>EVALUATE
+VAR _deps = INFO.CALCDEPENDENCY()
+VAR _filtered =
+    FILTER(
+        _deps,
+        [OBJECT_TYPE] = "MEASURE"
+            && NOT CONTAINSSTRING([TABLE], "LocalDateTable_")
+            && NOT CONTAINSSTRING([TABLE], "DateTableTemplate_")
+            && NOT CONTAINSSTRING([REFERENCED_TABLE], "LocalDateTable_")
+            && NOT CONTAINSSTRING([REFERENCED_TABLE], "DateTableTemplate_")
+    )
+RETURN
+SELECTCOLUMNS(
+    _filtered,
+    "FromObject", [OBJECT],
+    "FromTable", [TABLE],
+    "ToObject", [REFERENCED_OBJECT],
+    "ToTable", [REFERENCED_TABLE],
+    "DependencyType", [REFERENCED_OBJECT_TYPE]
+)</div>
+        <div class="step-label"><span class="step-num">2</span>Paste results below</div>
+        <textarea class="csv-paste" id="daxPaste" placeholder="Paste DAX Query View results here (tab-separated)..."></textarea>
+        <div class="format-hint">Accepts tab-separated DAX Query View output directly.</div>
+      </div>
+
+      <div class="tab-content" id="tab-paste">
+        <textarea class="csv-paste" id="csvPaste" placeholder='FromObject,FromTable,ToObject,ToTable,DependencyType
+"Total Sales","Sales","Net Sales","Sales","Measure"
+"Net Sales","Sales","Amount","Orders","Column"'></textarea>
+        <div class="format-hint">Expected columns: <code>FromObject, FromTable, ToObject, ToTable, DependencyType</code><br><code>DependencyType</code> is optional — defaults to "Measure" if missing.</div>
+      </div>
+      <div class="tab-content" id="tab-file">
+        <div class="drop-zone" id="dropZone">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" style="margin-bottom:8px;color:var(--text-dim)"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <div>Drop a .csv/.txt/.tsv file here or <span style="color:var(--accent)">click to browse</span></div>
+          <input type="file" id="fileInput" accept=".csv,.txt,.tsv" />
+        </div>
+      </div>
+      <div class="tab-content" id="tab-vpax">
+        <div class="drop-zone" id="vpaxDropZone">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" style="margin-bottom:8px;color:var(--text-dim)"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <div>Drop a .vpax file here or <span style="color:var(--accent)">click to browse</span></div>
+          <input type="file" id="vpaxInput" accept=".vpax,.zip" />
+        </div>
+        <div class="format-hint">VPAX support extracts measure formulas from model JSON inside the archive, then infers dependencies from DAX references. Best results with DAX Studio VertiPaq Analyzer exports.</div>
+      </div>
+      <div class="tab-content" id="tab-demo">
+        <p style="font-size:13px;color:var(--text-muted);line-height:1.6;">Load a sample dataset to explore the interface. Simulates a typical Power BI model with sales, margin, and KPI measures.</p>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" id="btnCancel">Cancel</button>
+      <button class="btn btn-accent" id="btnGo">Load Graph</button>
+    </div>
+  </div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+(function(){
+
+/* ═══ STATE ═══ */
+let graphData = { nodes: [], links: [] };
+let simulation, svgEl, gLinks, gNodes, zoomBehavior;
+let selectedNode = null;
+let currentView = 'focus';
+let focusSelectedId = null;
+let focusLineageHeight = null;
+const FOCUS_DEFAULT_HEIGHT = '40%';
+const FOCUS_SIDEBAR_DEFAULT_WIDTH = 280;
+let focusZoom = 1;
+const FOCUS_ZOOM_MIN = 0.35;
+const FOCUS_ZOOM_MAX = 2.5;
+const FOCUS_ZOOM_STEP = 0.15;
+let focusLineageContent = { width: 0, height: 0 };
+
+/* ═══ VIEW TOGGLE ═══ */
+const viewBtns = document.querySelectorAll('.view-toggle button');
+const views = document.querySelectorAll('.view');
+
+function switchView(v) {
+  if (v === currentView) return;
+  currentView = v;
+  viewBtns.forEach(x => x.classList.toggle('active', x.dataset.view === v));
+  views.forEach(x => x.classList.toggle('active', x.id === 'view-' + v));
+  const isGraph = v === 'graph';
+  const hasData = graphData.nodes.length > 0;
+  document.getElementById('legend').style.display = isGraph && hasData ? 'block' : 'none';
+  document.getElementById('zoomControls').style.display = isGraph && hasData ? 'flex' : 'none';
+  document.getElementById('headerSearchBox').style.display = isGraph ? '' : 'none';
+  if (v === 'focus' && hasData) buildFocusSidebar();
+  if (v === 'graph' && hasData && !simulation) renderGraph();
+}
+viewBtns.forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));
+
+/* ═══ MODAL ═══ */
+const modal = document.getElementById('modal');
+const modalTabs = document.querySelectorAll('.modal .tab-btn');
+const tabContents = document.querySelectorAll('.tab-content');
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const vpaxDropZone = document.getElementById('vpaxDropZone');
+const vpaxInput = document.getElementById('vpaxInput');
+let selectedVpaxFile = null;
+
+modalTabs.forEach(t => t.addEventListener('click', () => {
+  modalTabs.forEach(x => x.classList.remove('active'));
+  tabContents.forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  document.getElementById('tab-' + t.dataset.tab).classList.add('active');
+}));
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('dragover'); if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) readFile(fileInput.files[0]); });
+vpaxDropZone.addEventListener('click', () => vpaxInput.click());
+vpaxDropZone.addEventListener('dragover', e => { e.preventDefault(); vpaxDropZone.classList.add('dragover'); });
+vpaxDropZone.addEventListener('dragleave', () => vpaxDropZone.classList.remove('dragover'));
+vpaxDropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  vpaxDropZone.classList.remove('dragover');
+  if (e.dataTransfer.files[0]) selectVpaxFile(e.dataTransfer.files[0]);
+});
+vpaxInput.addEventListener('change', () => { if (vpaxInput.files[0]) selectVpaxFile(vpaxInput.files[0]); });
+
+function selectVpaxFile(file) {
+  selectedVpaxFile = file;
+  const name = (file && file.name) || '';
+  vpaxDropZone.querySelector('div').innerHTML = `Selected: <span style="color:var(--accent)">${name}</span>`;
+}
+
+function readFile(file) {
+  const r = new FileReader();
+  r.onload = e => {
+    document.getElementById('daxPaste').value = e.target.result;
+    modalTabs.forEach(x => x.classList.remove('active'));
+    tabContents.forEach(x => x.classList.remove('active'));
+    modalTabs[0].classList.add('active');
+    document.getElementById('tab-dax').classList.add('active');
+  };
+  r.readAsText(file);
+}
+document.getElementById('btnLoad').addEventListener('click', () => modal.classList.remove('hidden'));
+document.getElementById('btnCancel').addEventListener('click', () => { if (graphData.nodes.length) modal.classList.add('hidden'); });
+
+document.getElementById('copyDaxBtn').addEventListener('click', () => {
+  const query = document.getElementById('daxQueryBlock').textContent.replace('Copy', '').trim();
+  navigator.clipboard.writeText(query).then(() => {
+    const btn = document.getElementById('copyDaxBtn');
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+  });
+});
+
+document.getElementById('btnGo').addEventListener('click', async () => {
+  const activeTab = document.querySelector('.modal .tab-btn.active').dataset.tab;
+  let parsed = null;
+
+  try {
+    if (activeTab === 'vpax') {
+      if (!selectedVpaxFile) {
+        alert('Choose a VPAX file first.');
+        return;
+      }
+      parsed = await parseVPAXFile(selectedVpaxFile);
+      if (!parsed.links.length) {
+        alert('VPAX loaded but no dependencies were detected. Try a VPAX that contains measure expressions.');
+        return;
+      }
+    } else {
+      let raw = '';
+      if (activeTab === 'demo') raw = generateDemoData();
+      else if (activeTab === 'dax') raw = document.getElementById('daxPaste').value.trim();
+      else raw = document.getElementById('csvPaste').value.trim();
+      if (!raw) return;
+      parsed = parseData(raw);
+      if (!parsed.links.length) {
+        alert('No valid edges found. Check the CSV format.');
+        return;
+      }
+    }
+
+    graphData = parsed;
+    modal.classList.add('hidden');
+    updateStats();
+    clearFocusSelection();
+    if (currentView === 'focus') buildFocusSidebar();
+    if (currentView === 'graph') renderGraph();
+  } catch (err) {
+    alert('Failed to parse VPAX file. ' + ((err && err.message) ? err.message : ''));
+  }
+});
+
+/* ═══ VPAX PARSER ═══ */
+async function parseVPAXFile(file) {
+  if (typeof JSZip === 'undefined') {
+    throw new Error('JSZip failed to load.');
+  }
+
+  const buf = await file.arrayBuffer();
+  const zip = await JSZip.loadAsync(buf);
+  const modelEntries = Object.keys(zip.files)
+    .filter(p => {
+      if (zip.files[p].dir) return false;
+      const lower = p.toLowerCase();
+      return lower.endsWith('.json') || lower.endsWith('.bim');
+    });
+
+  if (!modelEntries.length) {
+    throw new Error('No model metadata found in archive.');
+  }
+
+  const prioritized = modelEntries
+    .sort((a, b) => scoreJsonEntry(b) - scoreJsonEntry(a));
+
+  let modelJson = null;
+  for (const path of prioritized) {
+    try {
+      const txt = await readZipEntryText(zip.files[path]);
+      modelJson = JSON.parse(txt);
+      const probe = extractMeasuresFromAnyJson(modelJson);
+      if (probe.length) break;
+    } catch (e) {
+      modelJson = null;
+    }
+  }
+
+  if (!modelJson) {
+    throw new Error('Could not parse model JSON from VPAX.');
+  }
+
+  const measures = extractMeasuresFromAnyJson(modelJson);
+  if (!measures.length) {
+    throw new Error('No measures with expressions found in VPAX metadata.');
+  }
+
+  return buildGraphFromMeasures(measures);
+}
+
+async function readZipEntryText(entry) {
+  const bytes = await entry.async('uint8array');
+  const decoders = [
+    new TextDecoder('utf-8', { fatal: false }),
+    new TextDecoder('utf-16le', { fatal: false }),
+    new TextDecoder('utf-16be', { fatal: false })
+  ];
+
+  for (const decoder of decoders) {
+    try {
+      let text = decoder.decode(bytes);
+      text = text.replace(/^\uFEFF/, '').replace(/\u0000/g, '');
+      const trimmed = text.trim();
+      if (!trimmed) continue;
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        return text;
+      }
+    } catch (e) {
+      // Try next encoding
+    }
+  }
+
+  // Last-resort fallback for atypical encodings.
+  let fallback = '';
+  for (let i = 0; i < bytes.length; i++) {
+    fallback += String.fromCharCode(bytes[i]);
+  }
+  return fallback.replace(/^\uFEFF/, '').replace(/\u0000/g, '');
+}
+
+function scoreJsonEntry(path) {
+  const p = path.toLowerCase();
+  if (p.endsWith('model.bim')) return 120;
+  if (p.includes('daxmodel')) return 100;
+  if (p.includes('model')) return 60;
+  if (p.includes('metadata')) return 50;
+  if (p.includes('schema')) return 40;
+  return 1;
+}
+
+function extractMeasuresFromAnyJson(root) {
+  const out = [];
+  const seen = new Set();
+
+  function addMeasure(table, name, expression) {
+    if (!name || !expression) return;
+    const t = String(table || '').trim() || 'Unknown';
+    const n = String(name).trim();
+    const e = String(expression);
+    const k = t + '||' + n;
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push({ table: t, name: n, expression: e });
+  }
+
+  function walk(node, ctxTable) {
+    if (!node) return;
+
+    if (Array.isArray(node)) {
+      node.forEach(x => walk(x, ctxTable));
+      return;
+    }
+
+    if (typeof node !== 'object') return;
+
+    const tableName =
+      (typeof node.Name === 'string' && Array.isArray(node.Measures)) ? node.Name :
+      (typeof node.name === 'string' && (Array.isArray(node.measures) || Array.isArray(node.Measures))) ? node.name :
+      ctxTable;
+
+    const measuresArr = Array.isArray(node.Measures) ? node.Measures : (Array.isArray(node.measures) ? node.measures : null);
+    if (measuresArr) {
+      measuresArr.forEach(m => {
+        if (!m || typeof m !== 'object') return;
+        const mName = m.Name || m.name || m.MeasureName || m.measureName;
+        const mExpr = m.Expression || m.expression || m.Dax || m.dax || m.Formula || m.formula;
+        addMeasure(tableName, mName, mExpr);
+      });
+    }
+
+    const maybeName = node.Name || node.name;
+    const maybeExpr = node.Expression || node.expression || node.Dax || node.dax || node.Formula || node.formula;
+    if (typeof maybeName === 'string' && typeof maybeExpr === 'string') {
+      addMeasure(ctxTable || node.TableName || node.tableName, maybeName, maybeExpr);
+    }
+
+    Object.keys(node).forEach(k => {
+      const child = node[k];
+      const nextTable = /table/i.test(k) && typeof node.Name === 'string' ? node.Name : tableName;
+      walk(child, nextTable);
+    });
+  }
+
+  walk(root, '');
+  return out;
+}
+
+function buildGraphFromMeasures(measures) {
+  const nodesMap = {};
+  const links = [];
+
+  const measureKeySet = new Set();
+  const measuresByName = {};
+  measures.forEach(m => {
+    const key = m.table + '.' + m.name;
+    measureKeySet.add(key);
+    if (!measuresByName[m.name]) measuresByName[m.name] = [];
+    measuresByName[m.name].push(m);
+    if (!nodesMap[key]) nodesMap[key] = { id: key, name: m.name, table: m.table, type: 'Measure' };
+  });
+
+  function addLink(fromMeasure, targetTable, targetName, targetType) {
+    const sourceId = fromMeasure.table + '.' + fromMeasure.name;
+    const table = targetTable || fromMeasure.table || 'Unknown';
+    const targetId = table + '.' + targetName;
+    if (!targetName || sourceId === targetId) return;
+    if (!nodesMap[targetId]) {
+      nodesMap[targetId] = { id: targetId, name: targetName, table, type: targetType };
+    } else if (targetType === 'Measure') {
+      nodesMap[targetId].type = 'Measure';
+    }
+    links.push({ source: sourceId, target: targetId, type: targetType });
+  }
+
+  measures.forEach(m => {
+    const expr = m.expression || '';
+
+    const qualified = /(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_ ]*))\s*\[([^\]]+)\]/g;
+    let qMatch;
+    while ((qMatch = qualified.exec(expr)) !== null) {
+      const table = (qMatch[1] || qMatch[2] || '').trim();
+      const name = (qMatch[3] || '').trim();
+      if (!name) continue;
+      const asMeasure = measureKeySet.has(table + '.' + name);
+      addLink(m, table, name, asMeasure ? 'Measure' : 'Column');
+    }
+
+    const unqualified = /\[([^\]]+)\]/g;
+    let uMatch;
+    while ((uMatch = unqualified.exec(expr)) !== null) {
+      const name = (uMatch[1] || '').trim();
+      if (!name) continue;
+      const byName = measuresByName[name] || [];
+      if (!byName.length) continue;
+
+      let target = byName.find(x => x.table === m.table) || (byName.length === 1 ? byName[0] : null);
+      if (!target) continue;
+      addLink(m, target.table, target.name, 'Measure');
+    }
+  });
+
+  const dedup = {};
+  links.forEach(l => {
+    const key = l.source + '|' + l.target + '|' + l.type;
+    dedup[key] = l;
+  });
+
+  return { nodes: Object.values(nodesMap), links: Object.values(dedup) };
+}
+
+/* ═══ DATA PARSER (auto-detect TSV / CSV) ═══ */
+function parseData(raw) {
+  const lines = raw.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return { nodes: [], links: [] };
+
+  const delim = lines[0].includes('\t') ? '\t' : ',';
+  const hdr = splitLine(lines[0], delim).map(h => h.toLowerCase().replace(/[^a-z0-9_]/g, ''));
+
+  function idx(test, fb) { const i = hdr.findIndex(test); return i >= 0 ? i : fb; }
+
+  const fi  = idx(h => (h.includes('from') && h.includes('object')) || h === 'frommeasure' || h === 'object', 0);
+  const fti = idx(h => (h.includes('from') && h.includes('table')) || (h === 'table' && !h.includes('ref')), 1);
+  const ti  = idx(h => (h.includes('to') && h.includes('object')) || h === 'tomeasure' || (h.includes('referenced_object') && !h.includes('type')), hdr.length > 3 ? 2 : 1);
+  const tti = idx(h => (h.includes('to') && h.includes('table')) || h.includes('referenced_table'), hdr.length > 3 ? 3 : 2);
+  const typeIdx = idx(h => h.includes('dependencytype') || h.includes('referenced_object_type') || h.includes('type'), -1);
+
+  let colFromObj = fi, colFromTbl = fti, colToObj = ti, colToTbl = tti, colType = typeIdx;
+  const exactFrom = hdr.indexOf('fromobject');
+  const exactFromTbl = hdr.indexOf('fromtable');
+  const exactTo = hdr.indexOf('toobject');
+  const exactToTbl = hdr.indexOf('totable');
+  const exactType = hdr.indexOf('dependencytype');
+  if (exactFrom >= 0) colFromObj = exactFrom;
+  if (exactFromTbl >= 0) colFromTbl = exactFromTbl;
+  if (exactTo >= 0) colToObj = exactTo;
+  if (exactToTbl >= 0) colToTbl = exactToTbl;
+  if (exactType >= 0) colType = exactType;
+
+  const VALID_TYPES = new Set(['measure', 'column_data', 'attribute', 'calc_column', 'column', 'table']);
+  const NOISE_PREFIXES = ['localdatetable_', 'datetabletemplate_'];
+
+  const nodesMap = {}, links = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const c = splitLine(lines[i], delim);
+    if (c.length < 3) continue;
+
+    const fn = c[colFromObj] || '';
+    const ft = c[colFromTbl] || '';
+    const tn = c[colToObj] || '';
+    const tt = c[colToTbl] || '';
+    const rawType = ((colType >= 0 ? c[colType] : 'Measure') || 'Measure').toLowerCase().trim();
+
+    if (colType >= 0 && !VALID_TYPES.has(rawType) && rawType !== 'measure') continue;
+    const ftL = ft.toLowerCase(), ttL = tt.toLowerCase();
+    if (NOISE_PREFIXES.some(p => ftL.startsWith(p) || ttL.startsWith(p))) continue;
+
+    let normType = 'Measure';
+    if (['column_data', 'attribute', 'column', 'table', 'calc_column'].includes(rawType)) normType = 'Column';
+
+    if (!fn || !tn) continue;
+    const fid = ft + '.' + fn, tid = tt + '.' + tn;
+    if (!nodesMap[fid]) nodesMap[fid] = { id: fid, name: fn, table: ft, type: 'Measure' };
+    if (!nodesMap[tid]) nodesMap[tid] = { id: tid, name: tn, table: tt, type: normType };
+    links.push({ source: fid, target: tid, type: normType });
+  }
+
+  return { nodes: Object.values(nodesMap), links };
+}
+
+function splitLine(line, delim) {
+  if (delim === '\t') return line.split('\t').map(s => s.trim().replace(/^"|"$/g, ''));
+  const r = []; let cur = '', q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') { q = !q; continue; }
+    if (ch === ',' && !q) { r.push(cur.trim()); cur = ''; continue; }
+    cur += ch;
+  }
+  r.push(cur.trim());
+  return r;
+}
+function updateStats() {
+  const m=graphData.nodes.filter(n=>n.type==='Measure').length;
+  const c=graphData.nodes.filter(n=>n.type==='Column').length;
+  document.getElementById('statPills').innerHTML =
+    `<div class="stat-pill"><span class="num">${m}</span> measures</div>`+
+    `<div class="stat-pill"><span class="num">${c}</span> columns</div>`+
+    `<div class="stat-pill"><span class="num">${graphData.links.length}</span> edges</div>`;
+}
+
+/* ═══ DEMO DATA ═══ */
+function generateDemoData() {
+  return `FromObject,FromTable,ToObject,ToTable,DependencyType
+"Revenue YTD","KPIs","Total Revenue","Sales","Measure"
+"Revenue YTD","KPIs","YTD Filter","Time Intelligence","Measure"
+"Gross Margin %","KPIs","Total Revenue","Sales","Measure"
+"Gross Margin %","KPIs","Total COGS","Sales","Measure"
+"Total Revenue","Sales","Net Sales","Sales","Measure"
+"Total Revenue","Sales","Other Income","Sales","Measure"
+"Net Sales","Sales","Gross Sales","Sales","Measure"
+"Net Sales","Sales","Returns","Sales","Measure"
+"Gross Sales","Sales","Amount","Orders","Column"
+"Gross Sales","Sales","Unit Price","Products","Column"
+"Returns","Sales","Return Amount","Orders","Column"
+"Total COGS","Sales","Material Cost","Sales","Measure"
+"Total COGS","Sales","Labor Cost","Sales","Measure"
+"Material Cost","Sales","Cost Per Unit","Products","Column"
+"Material Cost","Sales","Qty","Orders","Column"
+"Labor Cost","Sales","Hours","Production","Column"
+"Labor Cost","Sales","Rate","Production","Column"
+"YoY Growth %","KPIs","Total Revenue","Sales","Measure"
+"YoY Growth %","KPIs","PY Revenue","Time Intelligence","Measure"
+"PY Revenue","Time Intelligence","Total Revenue","Sales","Measure"
+"PY Revenue","Time Intelligence","DateKey","Calendar","Column"
+"Sales per Customer","KPIs","Total Revenue","Sales","Measure"
+"Sales per Customer","KPIs","Customer Count","Customers","Measure"
+"Customer Count","Customers","CustomerID","Customers","Column"
+"Avg Order Value","KPIs","Total Revenue","Sales","Measure"
+"Avg Order Value","KPIs","Order Count","Sales","Measure"
+"Order Count","Sales","OrderID","Orders","Column"
+"Top Product Revenue","Products","Total Revenue","Sales","Measure"
+"Top Product Revenue","Products","Product Rank","Products","Measure"
+"Product Rank","Products","Total Revenue","Sales","Measure"
+"Running Total","Time Intelligence","Total Revenue","Sales","Measure"
+"Running Total","Time Intelligence","DateKey","Calendar","Column"`;
+}
+
+/* ═══ HELPERS ═══ */
+function lsid(l){return l.source.id!==undefined?l.source.id:l.source;}
+function ltid(l){return l.target.id!==undefined?l.target.id:l.target;}
+function getDirectUp(id) {
+  return graphData.links.filter(l=>lsid(l)===id).map(l=>graphData.nodes.find(n=>n.id===ltid(l))).filter(Boolean);
+}
+function getDirectDown(id) {
+  return graphData.links.filter(l=>ltid(l)===id).map(l=>graphData.nodes.find(n=>n.id===lsid(l))).filter(Boolean);
+}
+function getUpstream(id) {
+  const s=new Set();(function w(n){graphData.links.forEach(l=>{const si=lsid(l),ti=ltid(l);if(si===n&&!s.has(ti)){s.add(ti);w(ti);}});})(id);return s;
+}
+function getDownstream(id) {
+  const s=new Set();(function w(n){graphData.links.forEach(l=>{const si=lsid(l),ti=ltid(l);if(ti===n&&!s.has(si)){s.add(si);w(si);}});})(id);return s;
+}
+
+/* ══════════════════════════════════════
+   VIEW 1 — FULL GRAPH
+   ══════════════════════════════════════ */
+function renderGraph() {
+  document.getElementById('legend').style.display = 'block';
+  document.getElementById('zoomControls').style.display = 'flex';
+  d3.select('#graph-container').selectAll('*').remove();
+  const container = document.getElementById('graph-container');
+  const W=container.clientWidth, H=container.clientHeight;
+  const svg = d3.select('#graph-container').append('svg').attr('width',W).attr('height',H);
+  svgEl = svg;
+  svg.append('defs').selectAll('marker').data(['default','upstream','downstream']).join('marker')
+    .attr('id',d=>'arrow-'+d).attr('viewBox','0 -5 10 10').attr('refX',20).attr('refY',0)
+    .attr('markerWidth',6).attr('markerHeight',6).attr('orient','auto')
+    .append('path').attr('d','M0,-4L10,0L0,4')
+    .attr('fill',d=>d==='upstream'?'var(--upstream)':d==='downstream'?'var(--downstream)':'var(--link)');
+  const g = svg.append('g');
+  zoomBehavior = d3.zoom().scaleExtent([0.1,5]).on('zoom',e=>g.attr('transform',e.transform));
+  svg.call(zoomBehavior);
+  const degree={};
+  graphData.links.forEach(l=>{degree[l.source]=(degree[l.source]||0)+1;degree[l.target]=(degree[l.target]||0)+1;});
+  const rScale = d3.scaleSqrt().domain([1,d3.max(Object.values(degree))||1]).range([5,16]);
+  gLinks = g.append('g').selectAll('line').data(graphData.links).join('line').attr('class','link').attr('marker-end','url(#arrow-default)');
+  gNodes = g.append('g').selectAll('g').data(graphData.nodes).join('g').attr('class','node-group')
+    .call(d3.drag().on('start',(e,d)=>{if(!e.active)simulation.alphaTarget(0.3).restart();d.fx=d.x;d.fy=d.y;})
+      .on('drag',(e,d)=>{d.fx=e.x;d.fy=e.y;}).on('end',(e,d)=>{if(!e.active)simulation.alphaTarget(0);d.fx=null;d.fy=null;}));
+  gNodes.append('circle').attr('class','node-circle').attr('r',d=>rScale(degree[d.id]||1))
+    .attr('fill',d=>d.type==='Column'?'var(--column)':'var(--measure)')
+    .attr('stroke',d=>d.type==='Column'?'var(--column)':'var(--measure)')
+    .attr('stroke-opacity',0.3).attr('stroke-width',3);
+  gNodes.append('text').attr('class','node-label').attr('dy',d=>rScale(degree[d.id]||1)+14).text(d=>d.name);
+  gNodes.on('click',(e,d)=>{e.stopPropagation();selectNodeGraph(d);});
+  svg.on('click',deselectGraph);
+  const tooltip=document.getElementById('tooltip');
+  gNodes.on('mouseenter',(e,d)=>{tooltip.style.display='block';tooltip.textContent=d.table?d.table+' → '+d.name:d.name;})
+    .on('mousemove',e=>{tooltip.style.left=(e.clientX+12)+'px';tooltip.style.top=(e.clientY-8)+'px';})
+    .on('mouseleave',()=>{tooltip.style.display='none';});
+  simulation = d3.forceSimulation(graphData.nodes)
+    .force('link',d3.forceLink(graphData.links).id(d=>d.id).distance(80))
+    .force('charge',d3.forceManyBody().strength(-250))
+    .force('center',d3.forceCenter(W/2,H/2))
+    .force('collision',d3.forceCollide().radius(d=>rScale(degree[d.id]||1)+10))
+    .on('tick',()=>{
+      gLinks.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+      gNodes.attr('transform',d=>`translate(${d.x},${d.y})`);
+    });
+  document.getElementById('zoomIn').onclick=()=>svg.transition().call(zoomBehavior.scaleBy,1.4);
+  document.getElementById('zoomOut').onclick=()=>svg.transition().call(zoomBehavior.scaleBy,0.7);
+  document.getElementById('zoomFit').onclick=fitAll;
+  setTimeout(fitAll,1500);
+}
+function fitAll(){
+  if(!graphData.nodes.length||!svgEl)return;
+  const c=document.getElementById('graph-container');
+  const W=c.clientWidth,H=c.clientHeight;
+  const xs=graphData.nodes.map(n=>n.x||0),ys=graphData.nodes.map(n=>n.y||0);
+  const x0=Math.min(...xs)-60,x1=Math.max(...xs)+60,y0=Math.min(...ys)-60,y1=Math.max(...ys)+60;
+  const dx=x1-x0,dy=y1-y0,s=Math.min(0.9*W/dx,0.9*H/dy,2);
+  svgEl.transition().duration(600).call(zoomBehavior.transform,d3.zoomIdentity.translate(W/2-s*(x0+dx/2),H/2-s*(y0+dy/2)).scale(s));
+}
+function selectNodeGraph(d){
+  selectedNode=d;
+  const up=getUpstream(d.id),down=getDownstream(d.id),inv=new Set([d.id,...up,...down]);
+  gNodes.select('.node-circle').attr('opacity',n=>inv.has(n.id)?1:0.1);
+  gNodes.select('.node-label').attr('opacity',n=>inv.has(n.id)?1:0.08);
+  gLinks.attr('stroke',l=>{const s=lsid(l);if(inv.has(lsid(l))&&inv.has(ltid(l))){return(s===d.id||up.has(s))?'var(--upstream)':'var(--downstream)';}return'var(--link)';})
+    .attr('stroke-opacity',l=>(inv.has(lsid(l))&&inv.has(ltid(l)))?0.8:0.05)
+    .attr('stroke-width',l=>(inv.has(lsid(l))&&inv.has(ltid(l)))?2:1)
+    .attr('marker-end',l=>{if(!(inv.has(lsid(l))&&inv.has(ltid(l))))return'url(#arrow-default)';return(lsid(l)===d.id||up.has(lsid(l)))?'url(#arrow-upstream)':'url(#arrow-downstream)';});
+  document.getElementById('detailName').textContent=d.name;
+  document.getElementById('detailTable').textContent=d.table||'';
+  document.getElementById('detailPanel').classList.add('open');
+  fillDepList('depListUpstream',getDirectUp(d.id),id=>{const n=graphData.nodes.find(x=>x.id===id);if(n)selectNodeGraph(n);});
+  fillDepList('depListDownstream',getDirectDown(d.id),id=>{const n=graphData.nodes.find(x=>x.id===id);if(n)selectNodeGraph(n);});
+}
+function fillDepList(elId,items,onClick){
+  const el=document.getElementById(elId);
+  if(!items.length){el.innerHTML='<li class="empty-msg">None</li>';return;}
+  el.innerHTML=items.map(n=>`<li data-id="${n.id}"><div class="dep-dot ${n.type.toLowerCase()}"></div>${n.name}<span class="dep-table-name">${n.table}</span></li>`).join('');
+  el.querySelectorAll('li[data-id]').forEach(li=>li.addEventListener('click',()=>onClick(li.dataset.id)));
+}
+function deselectGraph(){
+  selectedNode=null;
+  if(gNodes){gNodes.select('.node-circle').attr('opacity',1);gNodes.select('.node-label').attr('opacity',1);}
+  if(gLinks){gLinks.attr('stroke','var(--link)').attr('stroke-opacity',0.5).attr('stroke-width',1).attr('marker-end','url(#arrow-default)');}
+  document.getElementById('detailPanel').classList.remove('open');
+}
+document.getElementById('detailClose').addEventListener('click',deselectGraph);
+document.getElementById('searchInput').addEventListener('input',function(){
+  const q=this.value.toLowerCase().trim(); if(!gNodes)return;
+  if(!q){gNodes.select('.node-circle').attr('opacity',1);gNodes.select('.node-label').attr('opacity',1);return;}
+  gNodes.select('.node-circle').attr('opacity',d=>d.name.toLowerCase().includes(q)||d.table.toLowerCase().includes(q)?1:0.1);
+  gNodes.select('.node-label').attr('opacity',d=>d.name.toLowerCase().includes(q)||d.table.toLowerCase().includes(q)?1:0.08);
+});
+function setFocusSidebarWidth(width) {
+  const sidebar = document.querySelector('.focus-sidebar');
+  sidebar.style.width = width + 'px';
+  sidebar.style.minWidth = width + 'px';
+  sidebar.style.flexBasis = width + 'px';
+}
+
+function resetFullView() {
+  deselectGraph();
+  document.getElementById('searchInput').value = '';
+  const focusSearch = document.getElementById('focusSearch');
+  focusSearch.value = '';
+  focusLineageHeight = null;
+  focusZoom = 1;
+  setFocusSidebarWidth(FOCUS_SIDEBAR_DEFAULT_WIDTH);
+  const focusLineageArea = document.getElementById('focusLineageArea');
+  focusLineageArea.style.height = FOCUS_DEFAULT_HEIGHT;
+  focusLineageArea.scrollLeft = 0;
+  focusLineageArea.scrollTop = 0;
+  applyFocusZoom();
+  clearFocusSelection();
+  switchView('focus');
+  if (graphData.nodes.length) {
+    buildFocusSidebar();
+    if (simulation) {
+      simulation.alpha(0.5).restart();
+      setTimeout(fitAll, 500);
+    }
+  }
+}
+
+/* ══════════════════════════════════════
+   VIEW 2 — FOCUS (PBI-style lineage)
+   ══════════════════════════════════════ */
+function buildFocusSidebar() {
+  const measures = graphData.nodes.filter(n=>n.type==='Measure').sort((a,b)=>a.name.localeCompare(b.name));
+  const list = document.getElementById('focusMeasureList');
+  const countsById = {};
+  measures.forEach(m => {
+    countsById[m.id] = {
+      up: getDirectUp(m.id).length,
+      down: getDirectDown(m.id).length
+    };
+  });
+  function render(filter) {
+    const q=(filter||'').toLowerCase();
+    const filtered = q ? measures.filter(m=>m.name.toLowerCase().includes(q)||m.table.toLowerCase().includes(q)) : measures;
+    list.innerHTML = filtered.map(m=>
+      `<li data-id="${m.id}" class="${m.id===focusSelectedId?'active':''}"><span class="measure-name" title="Table: ${m.table}">${m.name}</span><span class="measure-counts"><span class="measure-count-dot up" title="Upstream dependencies">${countsById[m.id].up}</span><span class="measure-count-dot down" title="Downstream dependencies">${countsById[m.id].down}</span></span></li>`
+    ).join('');
+    document.getElementById('focusSidebarCount').textContent = filtered.length + ' measure'+(filtered.length!==1?'s':'');
+    list.querySelectorAll('li[data-id]').forEach(li=>li.addEventListener('click',()=>selectFocusMeasure(li.dataset.id)));
+  }
+  render('');
+  document.getElementById('focusSearch').oninput = function(){ render(this.value); };
+}
+
+function clearFocusSelection(){
+  focusSelectedId=null;
+  document.getElementById('focusEmpty').style.display='flex';
+  document.getElementById('focusLineageToolbar').classList.remove('visible');
+  document.getElementById('focusLineageArea').classList.remove('visible');
+  document.getElementById('focusResizer').classList.remove('visible');
+  document.getElementById('focusDetailArea').classList.remove('visible');
+  document.querySelectorAll('.focus-sidebar-list li').forEach(li=>li.classList.remove('active'));
+}
+
+function selectFocusMeasure(id){
+  focusSelectedId=id;
+  const d=graphData.nodes.find(n=>n.id===id);
+  if(!d)return;
+  document.querySelectorAll('.focus-sidebar-list li').forEach(li=>li.classList.toggle('active',li.dataset.id===id));
+  const activeLi=document.querySelector('.focus-sidebar-list li.active');
+  if(activeLi)activeLi.scrollIntoView({block:'nearest'});
+
+  document.getElementById('focusEmpty').style.display='none';
+  document.getElementById('focusLineageToolbar').classList.add('visible');
+  const focusLineageArea = document.getElementById('focusLineageArea');
+  focusLineageArea.classList.add('visible');
+  document.getElementById('focusResizer').classList.add('visible');
+  document.getElementById('focusDetailArea').classList.add('visible');
+
+  if (focusLineageHeight !== null) {
+    focusLineageArea.style.height = focusLineageHeight + 'px';
+  } else {
+    focusLineageArea.style.height = FOCUS_DEFAULT_HEIGHT;
+  }
+
+  const directUp=getDirectUp(id), directDown=getDirectDown(id);
+  document.getElementById('focusUpCount').textContent=directUp.length;
+  document.getElementById('focusDownCount').textContent=directDown.length;
+  fillFocusCol('focusUpBody',directUp);
+  fillFocusCol('focusDownBody',directDown);
+
+  requestAnimationFrame(()=>buildLineageView(d, directUp, directDown));
+}
+
+function setFocusZoom(next) {
+  focusZoom = Math.max(FOCUS_ZOOM_MIN, Math.min(FOCUS_ZOOM_MAX, next));
+  applyFocusZoom();
+}
+
+function applyFocusZoom() {
+  const area = document.getElementById('focusLineageArea');
+  const svg = area.querySelector('svg');
+  document.getElementById('focusZoomPct').textContent = Math.round(focusZoom * 100) + '%';
+  if (!svg || !focusLineageContent.width || !focusLineageContent.height) return;
+  svg.style.width = Math.round(focusLineageContent.width * focusZoom) + 'px';
+  svg.style.height = Math.round(focusLineageContent.height * focusZoom) + 'px';
+}
+
+function zoomFocusLineage(delta) {
+  const area = document.getElementById('focusLineageArea');
+  const prev = focusZoom;
+  setFocusZoom(prev + delta);
+  if (focusZoom === prev) return;
+  const ratio = focusZoom / prev;
+  area.scrollLeft = (area.scrollLeft + area.clientWidth / 2) * ratio - area.clientWidth / 2;
+  area.scrollTop = (area.scrollTop + area.clientHeight / 2) * ratio - area.clientHeight / 2;
+}
+
+function fitFocusLineage() {
+  const area = document.getElementById('focusLineageArea');
+  if (!focusLineageContent.width || !focusLineageContent.height) return;
+  const sx = area.clientWidth / focusLineageContent.width;
+  const sy = area.clientHeight / focusLineageContent.height;
+  const fitScale = Math.min(1, sx, sy);
+  setFocusZoom(isFinite(fitScale) && fitScale > 0 ? fitScale : 1);
+  area.scrollLeft = 0;
+  area.scrollTop = 0;
+}
+
+function rebuildFocusLineage() {
+  if (!focusSelectedId) return;
+  const center = graphData.nodes.find(n => n.id === focusSelectedId);
+  if (!center) return;
+  buildLineageView(center, getDirectUp(focusSelectedId), getDirectDown(focusSelectedId));
+}
+
+function initFocusResizer() {
+  const resizer = document.getElementById('focusResizer');
+  const lineageArea = document.getElementById('focusLineageArea');
+  const focusMain = document.querySelector('.focus-main');
+  const MIN_H = 180;
+
+  let dragging = false;
+
+  function onMove(e) {
+    if (!dragging) return;
+    const rect = focusMain.getBoundingClientRect();
+    const maxH = Math.max(MIN_H, rect.height - 180);
+    const next = Math.min(maxH, Math.max(MIN_H, e.clientY - rect.top));
+    focusLineageHeight = Math.round(next);
+    lineageArea.style.height = focusLineageHeight + 'px';
+    rebuildFocusLineage();
+  }
+
+  function stopDrag() {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.userSelect = '';
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', stopDrag);
+  }
+
+  resizer.addEventListener('mousedown', (e) => {
+    if (!focusSelectedId) return;
+    dragging = true;
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', stopDrag);
+    e.preventDefault();
+  });
+
+  window.addEventListener('resize', () => {
+    if (!focusSelectedId) return;
+    if (focusLineageHeight !== null) {
+      const rect = focusMain.getBoundingClientRect();
+      const maxH = Math.max(MIN_H, rect.height - 180);
+      focusLineageHeight = Math.min(focusLineageHeight, maxH);
+      lineageArea.style.height = focusLineageHeight + 'px';
+    }
+    rebuildFocusLineage();
+  });
+}
+
+function initFocusSidebarResizer() {
+  const resizer = document.getElementById('focusSidebarResizer');
+  const sidebar = document.querySelector('.focus-sidebar');
+  const focusView = document.getElementById('view-focus');
+  const MIN_W = 200;
+
+  let dragging = false;
+
+  function clampWidth(w) {
+    const maxW = Math.max(300, Math.floor(focusView.clientWidth * 0.55));
+    return Math.max(MIN_W, Math.min(maxW, w));
+  }
+
+  function onMove(e) {
+    if (!dragging) return;
+    const rect = focusView.getBoundingClientRect();
+    const width = clampWidth(e.clientX - rect.left);
+    setFocusSidebarWidth(width);
+  }
+
+  function stopDrag() {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.userSelect = '';
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', stopDrag);
+  }
+
+  resizer.addEventListener('mousedown', (e) => {
+    dragging = true;
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', stopDrag);
+    e.preventDefault();
+  });
+
+  window.addEventListener('resize', () => {
+    const currentWidth = sidebar.getBoundingClientRect().width;
+    const width = clampWidth(currentWidth);
+    setFocusSidebarWidth(width);
+  });
+}
+
+document.getElementById('btnResetView').addEventListener('click', resetFullView);
+
+document.getElementById('focusZoomOut').addEventListener('click', () => zoomFocusLineage(-FOCUS_ZOOM_STEP));
+document.getElementById('focusZoomIn').addEventListener('click', () => zoomFocusLineage(FOCUS_ZOOM_STEP));
+document.getElementById('focusZoomFit').addEventListener('click', fitFocusLineage);
+
+function fillFocusCol(elId,items){
+  const el=document.getElementById(elId);
+  if(!items.length){el.innerHTML='<div class="focus-col-empty">No dependencies</div>';return;}
+  el.innerHTML=items.map(n=>
+    `<div class="focus-dep-item" data-id="${n.id}"><div class="dep-dot ${n.type.toLowerCase()}"></div><span class="dep-name">${n.name}</span><span class="dep-badge ${n.type==='Column'?'is-column':'is-measure'}">${n.type.toUpperCase()}</span><span class="dep-table">${n.table}</span></div>`
+  ).join('');
+  el.querySelectorAll('.focus-dep-item[data-id]').forEach(item=>{
+    item.addEventListener('click',()=>{const node=graphData.nodes.find(n=>n.id===item.dataset.id);if(node&&node.type==='Measure')selectFocusMeasure(node.id);});
+  });
+}
+
+/* ── PBI-STYLE LINEAGE VIEW ── */
+function buildLineageView(center, upItems, downItems) {
+  const area = document.getElementById('focusLineageArea');
+  area.innerHTML = '';
+  const W = area.clientWidth, H = area.clientHeight;
+  if (W < 50 || H < 50) return;
+
+  const CARD_W = 200, CARD_H = 58;
+  const COL_GAP = 100;
+  const ROW_GAP = 12;
+  const PAD_X = 40;
+  const PAD_Y = 34;
+
+  const upCount = upItems.length, downCount = downItems.length;
+  const maxRows = Math.max(upCount, downCount, 1);
+  const totalW = CARD_W * 3 + COL_GAP * 2;
+  const maxColH = maxRows * CARD_H + (maxRows - 1) * ROW_GAP;
+  const contentW = Math.max(W, totalW + PAD_X * 2);
+  const contentH = Math.max(H, maxColH + PAD_Y * 2);
+  focusLineageContent = { width: contentW, height: contentH };
+
+  const startX = (contentW - totalW) / 2;
+  const colX = [startX, startX + CARD_W + COL_GAP, startX + 2*(CARD_W + COL_GAP)];
+
+  function colY(count, idx) {
+    const totalH = count * CARD_H + (count - 1) * ROW_GAP;
+    const topY = (contentH - totalH) / 2;
+    return topY + idx * (CARD_H + ROW_GAP);
+  }
+  const centerY = (contentH - CARD_H) / 2;
+
+  const svg = d3.select(area).append('svg')
+    .attr('width', contentW)
+    .attr('height', contentH)
+    .attr('viewBox', `0 0 ${contentW} ${contentH}`);
+
+  // Defs for arrow markers
+  svg.append('defs').selectAll('marker').data(['conn-up','conn-down']).join('marker')
+    .attr('id',d=>d).attr('viewBox','0 -4 8 8').attr('refX',7).attr('refY',0)
+    .attr('markerWidth',6).attr('markerHeight',6).attr('orient','auto')
+    .append('path').attr('d','M0,-3.5L7,0L0,3.5').attr('fill',d=>d==='conn-up'?'var(--upstream)':'var(--downstream)');
+
+  // Column labels
+  if (upCount > 0) {
+    svg.append('text').attr('class','lineage-col-label')
+      .attr('x', colX[0] + CARD_W/2).attr('y', 18).text('UPSTREAM');
+  }
+  svg.append('text').attr('class','lineage-col-label')
+    .attr('x', colX[1] + CARD_W/2).attr('y', 18).text('SELECTED');
+  if (downCount > 0) {
+    svg.append('text').attr('class','lineage-col-label')
+      .attr('x', colX[2] + CARD_W/2).attr('y', 18).text('DOWNSTREAM');
+  }
+
+  // Draw connectors first (behind cards)
+  const connG = svg.append('g');
+
+  // Upstream connectors: upstream card → center card
+  upItems.forEach((item, i) => {
+    const fromX = colX[0] + CARD_W;
+    const fromY = colY(upCount, i) + CARD_H / 2;
+    const toX = colX[1];
+    const toY = centerY + CARD_H / 2;
+    const midX = (fromX + toX) / 2;
+    connG.append('path')
+      .attr('class','lineage-connector')
+      .attr('d', `M${fromX},${fromY} C${midX},${fromY} ${midX},${toY} ${toX},${toY}`)
+      .attr('stroke','var(--upstream)')
+      .attr('marker-end','url(#conn-up)');
+  });
+
+  // Downstream connectors: center card → downstream card
+  downItems.forEach((item, i) => {
+    const fromX = colX[1] + CARD_W;
+    const fromY = centerY + CARD_H / 2;
+    const toX = colX[2];
+    const toY = colY(downCount, i) + CARD_H / 2;
+    const midX = (fromX + toX) / 2;
+    connG.append('path')
+      .attr('class','lineage-connector')
+      .attr('d', `M${fromX},${fromY} C${midX},${fromY} ${midX},${toY} ${toX},${toY}`)
+      .attr('stroke','var(--downstream)')
+      .attr('marker-end','url(#conn-down)');
+  });
+
+  // Draw cards
+  function drawCard(g, x, y, name, table, type, isCenter, nodeId) {
+    const card = g.append('g').attr('class','lineage-card').attr('transform',`translate(${x},${y})`);
+
+    // Card background
+    const strokeColor = isCenter ? 'var(--accent)' : type==='Column' ? 'var(--column)' : 'var(--border-light)';
+    const fillColor = isCenter ? 'rgba(88,166,255,0.08)' : 'var(--surface)';
+
+    card.append('rect').attr('class','lineage-card-bg')
+      .attr('width',CARD_W).attr('height',CARD_H)
+      .attr('fill',fillColor).attr('stroke',strokeColor);
+
+    if (isCenter) {
+      // Glow
+      card.insert('rect',':first-child')
+        .attr('width',CARD_W+4).attr('height',CARD_H+4)
+        .attr('x',-2).attr('y',-2)
+        .attr('rx',10).attr('ry',10)
+        .attr('fill','none').attr('stroke','var(--accent)').attr('stroke-opacity',0.2).attr('stroke-width',3);
+    }
+
+    // Type icon
+    const iconColor = type==='Column'?'var(--column)':'var(--measure)';
+    const iconBg = type==='Column'?'rgba(63,185,80,0.12)':'rgba(88,166,255,0.12)';
+    card.append('rect').attr('x',10).attr('y',10).attr('width',28).attr('height',28).attr('rx',6)
+      .attr('fill',iconBg);
+    if (type === 'Column') {
+      card.append('text').attr('x',24).attr('y',29).attr('text-anchor','middle')
+        .attr('font-size','14px').attr('fill',iconColor).text('⊞');
+    } else {
+      card.append('text').attr('x',24).attr('y',29).attr('text-anchor','middle')
+        .attr('font-size','13px').attr('fill',iconColor).text('ƒx');
+    }
+
+    // Name
+    const maxChars = 18;
+    const displayName = name.length > maxChars ? name.substring(0, maxChars) + '…' : name;
+    card.append('text').attr('class','lineage-card-name')
+      .attr('x',46).attr('y',24).text(displayName);
+
+    // Table
+    card.append('text').attr('class','lineage-card-table')
+      .attr('x',46).attr('y',40).text(table);
+
+    // Type badge
+    const badgeColor = type==='Column'?'var(--column)':'var(--measure)';
+    const badgeBg = type==='Column'?'rgba(63,185,80,0.12)':'rgba(88,166,255,0.12)';
+    const badgeText = type==='Column'?'COL':'MSR';
+    const bw = 28;
+    card.append('rect').attr('x',CARD_W-bw-8).attr('y',8).attr('width',bw).attr('height',16).attr('rx',3).attr('fill',badgeBg);
+    card.append('text').attr('class','lineage-card-type-badge')
+      .attr('x',CARD_W-bw/2-8).attr('y',19).attr('text-anchor','middle').attr('fill',badgeColor).text(badgeText);
+
+    // Click handler
+    if (!isCenter && nodeId) {
+      card.style('cursor','pointer');
+      card.on('click', () => {
+        const node = graphData.nodes.find(n=>n.id===nodeId);
+        if (node && node.type==='Measure') selectFocusMeasure(node.id);
+      });
+    }
+
+    // Tooltip
+    const tooltip = document.getElementById('tooltip');
+    card.on('mouseenter', (e) => {
+      tooltip.style.display='block';
+      tooltip.textContent = table + ' → ' + name;
+    }).on('mousemove', (e) => {
+      tooltip.style.left=(e.clientX+12)+'px'; tooltip.style.top=(e.clientY-8)+'px';
+    }).on('mouseleave', () => { tooltip.style.display='none'; });
+  }
+
+  const cardG = svg.append('g');
+
+  // Upstream cards
+  upItems.forEach((item, i) => {
+    drawCard(cardG, colX[0], colY(upCount, i), item.name, item.table, item.type, false, item.id);
+  });
+
+  // Center card
+  drawCard(cardG, colX[1], centerY, center.name, center.table, center.type, true, null);
+
+  // Downstream cards
+  downItems.forEach((item, i) => {
+    drawCard(cardG, colX[2], colY(downCount, i), item.name, item.table, item.type, false, item.id);
+  });
+
+  applyFocusZoom();
+}
+
+initFocusResizer();
+initFocusSidebarResizer();
+applyFocusZoom();
+
+})();
+</script>
+</body>
+</html>
